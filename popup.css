@@ -87,9 +87,3 @@ input:checked + .slider:before {
 #optionsBtn:hover {
   background-color: #e0e0e0;
 }
-
-.swedish-translator-popup {
-  /* Styles for the translation popup */
-  background: white !important;
-  color: black !important;
-}

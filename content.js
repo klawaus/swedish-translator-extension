@@ -1,6 +1,7 @@
 let translationPopup = null;
 let currentTimeout = null;
 let isEnabled = true;
+let shadowRoot = null;
 
 // Initialize
 chrome.storage.sync.get(['enabled'], (result) => {
@@ -17,32 +18,67 @@ chrome.storage.onChanged.addListener((changes) => {
   }
 });
 
-// Create popup element
+// Create popup element with Shadow DOM to prevent CSS conflicts
 function createPopup() {
+  // Create a container that won't affect page layout
+  const container = document.createElement('div');
+  container.id = 'swedish-translator-container';
+  container.style.cssText = `
+    position: fixed !important;
+    top: 0 !important;
+    left: 0 !important;
+    width: 0 !important;
+    height: 0 !important;
+    overflow: visible !important;
+    z-index: 2147483647 !important;
+    pointer-events: none !important;
+  `;
+  
+  // Attach shadow DOM to isolate styles
+  shadowRoot = container.attachShadow({ mode: 'closed' });
+  
+  // Create the actual popup inside shadow DOM
   const popup = document.createElement('div');
   popup.className = 'swedish-translator-popup';
-  popup.style.cssText = `
-    position: absolute;
-    z-index: 999999;
-    background: white;
-    border: 1px solid #ccc;
-    border-radius: 4px;
-    padding: 10px;
-    box-shadow: 0 2px 10px rgba(0,0,0,0.2);
-    max-width: 400px;
-    font-family: Arial, sans-serif;
-    font-size: 14px;
-    line-height: 1.4;
-    display: none;
+  
+  // Add styles to shadow DOM
+  const style = document.createElement('style');
+  style.textContent = `
+    .swedish-translator-popup {
+      position: fixed;
+      z-index: 999999;
+      background: white;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      padding: 10px;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+      max-width: 400px;
+      font-family: Arial, sans-serif;
+      font-size: 14px;
+      line-height: 1.4;
+      color: black;
+      pointer-events: auto;
+      display: none;
+    }
+    .swedish-translator-popup div {
+      margin: 0;
+      padding: 0;
+    }
   `;
-  document.body.appendChild(popup);
+  
+  shadowRoot.appendChild(style);
+  shadowRoot.appendChild(popup);
+  document.documentElement.appendChild(container);
+  
   return popup;
 }
 
 function removePopup() {
-  if (translationPopup) {
-    translationPopup.remove();
+  const container = document.getElementById('swedish-translator-container');
+  if (container) {
+    container.remove();
     translationPopup = null;
+    shadowRoot = null;
   }
 }
 
@@ -58,19 +94,21 @@ function showPopup(x, y, text, translation) {
     <div style="font-weight: bold;">${escapeHtml(translation)}</div>
   `;
   
-  // Position popup
+  // Position popup using fixed positioning
   translationPopup.style.left = x + 'px';
   translationPopup.style.top = (y + 20) + 'px';
   translationPopup.style.display = 'block';
   
   // Adjust position if popup goes off screen
-  const rect = translationPopup.getBoundingClientRect();
-  if (rect.right > window.innerWidth) {
-    translationPopup.style.left = (window.innerWidth - rect.width - 10) + 'px';
-  }
-  if (rect.bottom > window.innerHeight) {
-    translationPopup.style.top = (y - rect.height - 10) + 'px';
-  }
+  setTimeout(() => {
+    const rect = translationPopup.getBoundingClientRect();
+    if (rect.right > window.innerWidth) {
+      translationPopup.style.left = (window.innerWidth - rect.width - 10) + 'px';
+    }
+    if (rect.bottom > window.innerHeight) {
+      translationPopup.style.top = (y - rect.height - 10) + 'px';
+    }
+  }, 0);
 }
 
 function escapeHtml(text) {
@@ -143,14 +181,16 @@ document.addEventListener('mousemove', (event) => {
     currentTimeout = null;
   }
   
-  // Remove popup if mouse moved away
-  if (translationPopup && !translationPopup.contains(event.target)) {
+  // Check if mouse is over the popup
+  if (translationPopup) {
     const rect = translationPopup.getBoundingClientRect();
     const buffer = 10;
-    if (event.clientX < rect.left - buffer || 
-        event.clientX > rect.right + buffer || 
-        event.clientY < rect.top - buffer || 
-        event.clientY > rect.bottom + buffer) {
+    const isOverPopup = event.clientX >= rect.left - buffer && 
+                       event.clientX <= rect.right + buffer && 
+                       event.clientY >= rect.top - buffer && 
+                       event.clientY <= rect.bottom + buffer;
+    
+    if (!isOverPopup) {
       removePopup();
     }
   }
@@ -175,6 +215,9 @@ document.addEventListener('mousemove', (event) => {
 document.addEventListener('mouseup', (event) => {
   if (!isEnabled) return;
   
+  // Don't trigger if clicking on the popup container
+  if (event.target.id === 'swedish-translator-container') return;
+  
   setTimeout(() => {
     const selectedText = window.getSelection().toString().trim();
     if (selectedText && selectedText.length > 0) {
@@ -192,7 +235,7 @@ document.addEventListener('mouseup', (event) => {
 
 // Remove popup on click outside
 document.addEventListener('click', (event) => {
-  if (translationPopup && !translationPopup.contains(event.target)) {
+  if (event.target.id !== 'swedish-translator-container') {
     removePopup();
   }
 });
